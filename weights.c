@@ -267,8 +267,8 @@ int main(int argc, char *argv[])
         for (i = 0; i < attributes; i++)
             xx[i] = malloc(attributes * sizeof(double));
         for (o = tn; o < columns; o += nt)
-        { // find the best weights for outnode o, based on the input bits and observations
-            printf("outnode %d\n", o);
+        { // find the best weights for columns o, based on the input bits and observations
+            printf("columns %d\n", o);
             // initialize input-observation vector and input-input matrix
             for (i = 0; i < attributes; i++)
             {
@@ -282,7 +282,7 @@ int main(int argc, char *argv[])
                 fsetpos(fr, &datapos[d]);
                 fseek(fr, o, SEEK_CUR);
                 observation = fgetc(fr) - '0';
-                if (observation) // only consider data with an obervation for this outnode
+                if (observation) // only consider data with an obervation for this columns
                     for (i = 0; i < attributes; i++)
                     {
                         xo[i] += inputbit[d][i] * (observation - columnaverage[o] - rowaveragediff[d]);
