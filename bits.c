@@ -8,18 +8,18 @@
 #define NEWTONITER 50
 #define NEWTONEPS 1e-12
 
-int nt, data, rows, innodes, outnodes, maxoutput = 5;
-int *chosenoutnode, **observation, **storedinnodes, **oldcodes;
+int nt, rows, attributes, columns, maxoutput = 5;
+int **observation, **storedbits, **oldbits;
 
 double ***w, ***x, **y, ***wA, ***xA, **yA, ***wR, ***xR, **yR, **wB, **yB;
 double *werr, *xerr, *yerr, totwerr, totxerr, totyerr, toterr, *columnaverage, *rowaveragediff, tolerance, bestrmse, besttrialrmse, restart_threshold;
 
-char *outdata, errfile[100], testfile[100], statsfile[100], iterfile[100], weightfile[100], codefile[100], completedatafile[100];
+char *outdata, errfile[100], testfile[100], statsfile[100], iterfile[100], weightfile[100], bitfile[100];
 fpos_t *datapos;
 
 double beta;
 
-int innodes;
+int attributes;
 
 static inline double sq(double diff)
 {
@@ -54,7 +54,7 @@ void bilinproj(int d, int o, double *wold, double *xold)
     wdotw = 0.;
     wdotx = 0.;
     xdotx = 0.;
-    for (i = 0; i < innodes; ++i)
+    for (i = 0; i < attributes; ++i)
     { // these sums are convenient in the calculation of f and df/dt
         wdotw += wold[i] * wold[i];
         wdotx += wold[i] * xold[i];
@@ -103,7 +103,7 @@ void bilinproj(int d, int o, double *wold, double *xold)
         ta = t;
     }
 
-    for (i = 0; i < innodes; ++i)
+    for (i = 0; i < attributes; ++i)
     {
         den = 1. - sq(t);
         wA[d][o][i] = (wold[i] + t * xold[i]) / den;
@@ -125,9 +125,9 @@ void concurweights(int i, int o, double ***wold)
 void concurinputs(int d, int i, double ***xold, double **yold)
 {
     double avg = yold[d][i];
-    for (int o = 0; o < outnodes; o++)
+    for (int o = 0; o < columns; o++)
         avg += xold[d][o][i];
-    avg /= 1. + outnodes;
+    avg /= 1. + columns;
     yB[d][i] = avg;
 }
 
@@ -140,9 +140,9 @@ void projA(double ***wold, double ***xold, double **yold)
         int tn = omp_get_thread_num();
         for (d = 0; d < rows; ++d)
         {
-            for (o = tn; o < outnodes; o += nt)
+            for (o = tn; o < columns; o += nt)
                 bilinproj(d, o, wold[d][o], xold[d][o]);
-            for (i = tn; i < innodes; i += nt)
+            for (i = tn; i < attributes; i += nt)
                 yA[d][i] = yold[d][i] < .5 ? 0. : 1.;
         }
     }
@@ -156,10 +156,10 @@ void projB(double ***wold, double ***xold, double **yold)
 #pragma omp parallel num_threads(nt) private(d, o, i)
     {
         int tn = omp_get_thread_num();
-        for (o = tn; o < outnodes; o += nt)
-            for (i = 0; i < innodes; ++i)
+        for (o = tn; o < columns; o += nt)
+            for (i = 0; i < attributes; ++i)
                 concurweights(i, o, wold);
-        for (i = tn; i < innodes; i += nt)
+        for (i = tn; i < attributes; i += nt)
             for (d = 0; d < rows; ++d)
                 concurinputs(d, i, xold, yold);
     }
@@ -174,13 +174,13 @@ void ref(double ***wproj, double ***xproj, double **yproj)
         int tn = omp_get_thread_num();
         for (d = 0; d < rows; ++d)
         {
-            for (o = tn; o < outnodes; o += nt)
-                for (i = 0; i < innodes; ++i)
+            for (o = tn; o < columns; o += nt)
+                for (i = 0; i < attributes; ++i)
                 {
                     wR[d][o][i] = 2. * wproj[d][o][i] - w[d][o][i];
                     xR[d][o][i] = 2. * xproj[d][o][i] - x[d][o][i];
                 }
-            for (i = tn; i < innodes; i += nt)
+            for (i = tn; i < attributes; i += nt)
                 yR[d][i] = 2. * yproj[d][i] - y[d][i];
         }
     }
@@ -198,17 +198,17 @@ void iterate()
 #pragma omp parallel num_threads(nt) private(diff, d, o, i)
     {
         int tn = omp_get_thread_num();
-        for (o = tn; o < outnodes; o += nt)
+        for (o = tn; o < columns; o += nt)
         {
             werr[o] = 0.;
             xerr[o] = 0.;
         }
-        for (i = tn; i < innodes; i += nt)
+        for (i = tn; i < attributes; i += nt)
             yerr[i] = 0.;
         for (d = 0; d < rows; ++d)
         {
-            for (o = tn; o < outnodes; o += nt)
-                for (i = 0; i < innodes; ++i)
+            for (o = tn; o < columns; o += nt)
+                for (i = 0; i < attributes; ++i)
                 {
                     diff = wB[o][i] - wA[d][o][i];
                     w[d][o][i] += beta * diff;
@@ -217,7 +217,7 @@ void iterate()
                     x[d][o][i] += beta * diff;
                     xerr[o] += sq(diff);
                 }
-            for (i = tn; i < innodes; i += nt)
+            for (i = tn; i < attributes; i += nt)
             {
                 diff = yB[d][i] - yA[d][i];
                 y[d][i] += beta * diff;
@@ -229,21 +229,21 @@ void iterate()
     totwerr = 0.;
     totxerr = 0.;
     totyerr = 0.;
-    for (o = 0; o < outnodes; o++)
+    for (o = 0; o < columns; o++)
     {
-        werr[o] /= rows * innodes;
+        werr[o] /= rows * attributes;
         totwerr += werr[o];
-        xerr[o] /= rows * innodes;
+        xerr[o] /= rows * attributes;
         totxerr += xerr[o];
     }
-    for (i = 0; i < innodes; i++)
+    for (i = 0; i < attributes; i++)
     {
         yerr[i] /= rows;
         totyerr += yerr[i];
     }
-    totwerr /= outnodes;
-    totxerr /= outnodes;
-    totyerr /= innodes;
+    totwerr /= columns;
+    totxerr /= columns;
+    totyerr /= attributes;
     toterr = (totwerr + totxerr + totyerr) / 3.;
 }
 
@@ -251,16 +251,16 @@ void makevars()
 {
     int d, o;
 
-    storedinnodes = malloc(data * sizeof(int *));
-    for (d = 0; d < data; ++d)
-        storedinnodes[d] = malloc(innodes * sizeof(int));
-    oldcodes = malloc(data * sizeof(int *));
-    for (d = 0; d < data; ++d)
-        oldcodes[d] = malloc(innodes * sizeof(int));
+    storedbits = malloc(rows * sizeof(int *));
+    for (d = 0; d < rows; ++d)
+        storedbits[d] = malloc(attributes * sizeof(int));
+    oldbits = malloc(rows * sizeof(int *));
+    for (d = 0; d < rows; ++d)
+        oldbits[d] = malloc(attributes * sizeof(int));
 
-    werr = malloc(outnodes * sizeof(double));
-    xerr = malloc(outnodes * sizeof(double));
-    yerr = malloc(innodes * sizeof(double));
+    werr = malloc(columns * sizeof(double));
+    xerr = malloc(columns * sizeof(double));
+    yerr = malloc(attributes * sizeof(double));
 
     w = malloc(rows * sizeof(double **));
     x = malloc(rows * sizeof(double **));
@@ -274,66 +274,49 @@ void makevars()
     xR = malloc(rows * sizeof(double **));
     yR = malloc(rows * sizeof(double *));
 
-    wB = malloc(outnodes * sizeof(double *));
+    wB = malloc(columns * sizeof(double *));
     yB = malloc(rows * sizeof(double *));
 
     observation = malloc(rows * sizeof(int *));
 
     for (d = 0; d < rows; ++d)
     {
-        w[d] = malloc(outnodes * sizeof(double *));
-        x[d] = malloc(outnodes * sizeof(double *));
-        y[d] = malloc(innodes * sizeof(double));
+        w[d] = malloc(columns * sizeof(double *));
+        x[d] = malloc(columns * sizeof(double *));
+        y[d] = malloc(attributes * sizeof(double));
 
-        wA[d] = malloc(outnodes * sizeof(double *));
-        xA[d] = malloc(outnodes * sizeof(double *));
-        yA[d] = malloc(innodes * sizeof(double));
+        wA[d] = malloc(columns * sizeof(double *));
+        xA[d] = malloc(columns * sizeof(double *));
+        yA[d] = malloc(attributes * sizeof(double));
 
-        wR[d] = malloc(outnodes * sizeof(double *));
-        xR[d] = malloc(outnodes * sizeof(double *));
-        yR[d] = malloc(innodes * sizeof(double));
+        wR[d] = malloc(columns * sizeof(double *));
+        xR[d] = malloc(columns * sizeof(double *));
+        yR[d] = malloc(attributes * sizeof(double));
 
-        for (o = 0; o < outnodes; ++o)
+        for (o = 0; o < columns; ++o)
         {
-            w[d][o] = malloc(innodes * sizeof(double));
-            x[d][o] = malloc(innodes * sizeof(double));
+            w[d][o] = malloc(attributes * sizeof(double));
+            x[d][o] = malloc(attributes * sizeof(double));
 
-            wA[d][o] = malloc(innodes * sizeof(double));
-            xA[d][o] = malloc(innodes * sizeof(double));
+            wA[d][o] = malloc(attributes * sizeof(double));
+            xA[d][o] = malloc(attributes * sizeof(double));
 
-            wR[d][o] = malloc(innodes * sizeof(double));
-            xR[d][o] = malloc(innodes * sizeof(double));
+            wR[d][o] = malloc(attributes * sizeof(double));
+            xR[d][o] = malloc(attributes * sizeof(double));
         }
 
-        yB[d] = malloc(innodes * sizeof(double));
-        observation[d] = malloc(outnodes * sizeof(int));
+        yB[d] = malloc(attributes * sizeof(double));
+        observation[d] = malloc(columns * sizeof(int));
     }
 
-    for (o = 0; o < outnodes; o++)
-        wB[o] = malloc(innodes * sizeof(double));
+    for (o = 0; o < columns; o++)
+        wB[o] = malloc(attributes * sizeof(double));
 }
 
 int readdata(char *datafile, char *outnodefile)
 {
     FILE *fp;
     int i, n;
-
-    fp = fopen(outnodefile, "r");
-    if (!fp)
-    {
-        printf("output node file not found\n");
-        return 0;
-    }
-
-    outnodes = 0;
-    while (fscanf(fp, "%d", &n) > 0)
-        outnodes++;
-    fclose(fp);
-    chosenoutnode = malloc(outnodes * sizeof(int));
-    fp = fopen(outnodefile, "r");
-    for (n = 0; n < outnodes; n++)
-        fscanf(fp, "%d", &chosenoutnode[n]);
-    fclose(fp);
 
     fp = fopen(datafile, "r");
     if (!fp)
@@ -342,25 +325,26 @@ int readdata(char *datafile, char *outnodefile)
         return 0;
     }
 
-    outdata = malloc(outnodes * sizeof(char));
+    outdata = malloc(columns * sizeof(char));
 
     char c = ' ';
-    for (data = 0; data < rows; data++)
+    int r;
+    for (r = 0; r < rows; r++)
     {
         for (n = 0;; ++n)
         {
             c = fgetc(fp);
             if (c == EOF)
             {
-                printf("not enough rows in data file\n");
+                printf("not enough rows\n");
                 fclose(fp);
                 return 0;
             }
             if (c == '\n')
             {
-                if (n < chosenoutnode[outnodes - 1])
+                if (n < columns)
                 {
-                    printf("not enough data to fill outnodes\n");
+                    printf("not enough columns\n");
                     fclose(fp);
                     return 0;
                 }
@@ -370,12 +354,12 @@ int readdata(char *datafile, char *outnodefile)
     }
     fclose(fp);
 
-    datapos = malloc(data * sizeof(fpos_t));
+    datapos = malloc(rows * sizeof(fpos_t));
 
     fp = fopen(datafile, "r");
-    for (data = 0; data < rows; data++)
+    for (r = 0; r < rows; r++)
     {
-        fgetpos(fp, &datapos[data]);
+        fgetpos(fp, &datapos[r]);
         for (n = 0;; ++n)
         {
             c = fgetc(fp);
@@ -397,59 +381,55 @@ void transcribedata(char *datafile, int d)
 
     fp = fopen(datafile, "r");
     fsetpos(fp, &datapos[d]);
-    fseek(fp, chosenoutnode[0], SEEK_CUR);
     outdata[0] = fgetc(fp);
-    for (o = 1; o < outnodes; o++)
-    {
-        fseek(fp, chosenoutnode[o] - chosenoutnode[o - 1] - 1, SEEK_CUR);
+    for (o = 1; o < columns; o++)
         outdata[o] = fgetc(fp);
-    }
-    outdata[outnodes] = '\0';
-    for (o = 0; o < outnodes; ++o)
+    outdata[columns] = '\0';
+    for (o = 0; o < columns; ++o)
         observation[d][o] = outdata[o] - '0';
     fclose(fp);
 }
 
-// store the concur values from xB[d] as binary in storedinnodes[d]
-void storeinnodes(int d)
+// store the concur values from xB[d] as binary in storedbits[d]
+void storebits(int d)
 {
     int i;
-    for (i = 0; i < innodes; ++i)
-        storedinnodes[d][i] = (yB[d][i] < .5 ? 0 : 1);
+    for (i = 0; i < attributes; ++i)
+        storedbits[d][i] = (yB[d][i] < .5 ? 0 : 1);
 }
 
-// store the previous innodes
-void storeprevcodes(int d0)
+// store the previous attributes
+void storeprevbits(int d0)
 {
     int i;
-    for (i = 0; i < innodes; ++i)
-        oldcodes[d0][i] = storedinnodes[d0][i];
+    for (i = 0; i < attributes; ++i)
+        oldbits[d0][i] = storedbits[d0][i];
 }
 
 // initialize metric parameters and global concur values (for weights)
 void globalinit()
 {
     int d, o, i;
-    for (o = 0; o < outnodes; ++o)
-        for (i = 0; i < innodes; ++i)
-            wB[o][i] = 2. * (urand() - .5) / innodes;
-    for (d = 0; d < data; ++d)
-        for (i = 0; i < innodes; ++i)
+    for (o = 0; o < columns; ++o)
+        for (i = 0; i < attributes; ++i)
+            wB[o][i] = 2. * (urand() - .5) / attributes;
+    for (d = 0; d < rows; ++d)
+        for (i = 0; i < attributes; ++i)
         {
-            storedinnodes[d][i] = 0;
-            oldcodes[d][i] = storedinnodes[d][i];
+            storedbits[d][i] = 0;
+            oldbits[d][i] = storedbits[d][i];
         }
-    for (d = 0; d < data; ++d)
-        for (i = 0; i < innodes; ++i)
+    for (d = 0; d < rows; ++d)
+        for (i = 0; i < attributes; ++i)
         {
-            for (o = 0; o < outnodes; ++o)
+            for (o = 0; o < columns; ++o)
             {
-                w[d][o][i] = 4. * (urand() - .5) / innodes;
+                w[d][o][i] = 4. * (urand() - .5) / attributes;
                 x[d][o][i] = .5 * urand();
             }
             y[d][i] = .5 * urand();
-            storedinnodes[d][i] = y[d][i] < .5 ? 0 : 1;
-            oldcodes[d][i] = storedinnodes[d][i];
+            storedbits[d][i] = y[d][i] < .5 ? 0 : 1;
+            oldbits[d][i] = storedbits[d][i];
         }
 }
 
@@ -497,11 +477,11 @@ void readcolumnaverages(char *colavgfile)
     int c = 0, o;
     double dummy;
     FILE *fp;
-    columnaverage = malloc(outnodes * sizeof(double));
+    columnaverage = malloc(columns * sizeof(double));
     fp = fopen(colavgfile, "r");
-    for (o = 0; o < outnodes; ++o)
+    for (o = 0; o < columns; ++o)
     {
-        while (c < chosenoutnode[o])
+        while (c < columns)
         {
             fscanf(fp, "%lf", &dummy);
             c++;
@@ -517,9 +497,9 @@ void readrowaveragediffs(char *rowavgfile)
 {
     int d;
     FILE *fp;
-    rowaveragediff = malloc(data * sizeof(double));
+    rowaveragediff = malloc(rows * sizeof(double));
     fp = fopen(rowavgfile, "r");
-    for (d = 0; d < data; ++d)
+    for (d = 0; d < rows; ++d)
         fscanf(fp, "%lf", &rowaveragediff[d]);
     fclose(fp);
 }
@@ -530,9 +510,9 @@ void printweights(char *weightfile)
     FILE *fp;
     int o, i;
     fp = fopen(weightfile, "w");
-    for (o = 0; o < outnodes; ++o)
+    for (o = 0; o < columns; ++o)
     {
-        for (i = 0; i < innodes; ++i)
+        for (i = 0; i < attributes; ++i)
             fprintf(fp, " %12.6f", wA[0][o][i]);
         fprintf(fp, "\n");
     }
@@ -540,16 +520,16 @@ void printweights(char *weightfile)
     fclose(fp);
 }
 
-// print the stored code values (assuming we have a solution)
-void printcodes(char *codefile)
+// print the stored bit values (assuming we have a solution)
+void printbits(char *bitfile)
 {
     FILE *fp;
     int d, i;
-    fp = fopen(codefile, "w");
-    for (d = 0; d < data; ++d)
+    fp = fopen(bitfile, "w");
+    for (d = 0; d < rows; ++d)
     {
-        for (i = 0; i < innodes; ++i)
-            fprintf(fp, "%d", storedinnodes[d][i]);
+        for (i = 0; i < attributes; ++i)
+            fprintf(fp, "%d", storedbits[d][i]);
         fprintf(fp, "\n");
     }
     fprintf(fp, "\n");
@@ -571,14 +551,14 @@ double testpred(char *datafile, int td, int e)
             prederr = 0.;
             baselineroundedwrong = 0;
             baselineprederr = 0.;
-            for (o = 0; o < outnodes; ++o)
+            for (o = 0; o < columns; ++o)
             {
                 if (!observation[da][o])
                     continue;
                 obs++;
                 pred = columnaverage[o] + rowaveragediff[da];
-                for (i = 0; i < innodes; ++i)
-                    pred += wB[o][i] * storedinnodes[da][i];
+                for (i = 0; i < attributes; ++i)
+                    pred += wB[o][i] * storedbits[da][i];
                 prederr += sq(pred - observation[da][o]);
                 baselineprederr += sq(columnaverage[o] + rowaveragediff[da] - observation[da][o]);
                 if (clipround(pred) != observation[da][o])
@@ -598,20 +578,20 @@ double testpred(char *datafile, int td, int e)
     }
 
     int nodeschanged = 0;
-    for (da = 0; da < data; da++)
-        for (i = 0; i < innodes; i++)
-            if (storedinnodes[da][i] != oldcodes[da][i])
+    for (da = 0; da < rows; da++)
+        for (i = 0; i < attributes; i++)
+            if (storedbits[da][i] != oldbits[da][i])
                 nodeschanged++;
 
     FILE *fp = fopen(testfile, "a");
-    fprintf(fp, "%d,%d,%d,%d,%f,%f,%d/%d\n", e, totobs, totbaselineroundedwrong, totroundedwrong, sqrt(totbaselineprederr / totobs), sqrt(totprederr / totobs), nodeschanged, data * innodes);
+    fprintf(fp, "%d,%d,%d,%d,%f,%f,%d/%d\n", e, totobs, totbaselineroundedwrong, totroundedwrong, sqrt(totbaselineprederr / totobs), sqrt(totprederr / totobs), nodeschanged, rows * attributes);
     fclose(fp);
 
     if (sqrt(totprederr / totobs) < bestrmse)
     {
         bestrmse = sqrt(totprederr / totobs);
         printweights(weightfile);
-        printcodes(codefile);
+        printbits(bitfile);
     }
 
     if (sqrt(totprederr / totobs) < besttrialrmse)
@@ -627,26 +607,26 @@ int main(int argc, char *argv[])
     double stoperr, elapsed, ct, st;
     FILE *fp;
 
-    if (argc == 12)
+    if (argc == 10)
     {
         datafile = argv[1];
-        outnodefile = argv[2];
+        columns = atoi(argv[2]);
         rows = atoi(argv[3]);
-        innodes = atoi(argv[4]);
+        attributes = atoi(argv[4]);
         tolerance = .5;
         bestrmse = 1. * maxoutput;
         restart_threshold = 1.1;
-        beta = atof(argv[5]);
-        maxiter = atoi(argv[6]);
-        iterstride = atoi(argv[7]);
-        stoperr = atof(argv[8]);
-        trials = atoi(argv[9]);
-        id = argv[10];
-        nt = atoi(argv[11]);
+        beta = .5;
+        maxiter = atoi(argv[5]);
+        iterstride = atoi(argv[6]);
+        stoperr = .000001;
+        trials = atoi(argv[7]);
+        id = argv[8];
+        nt = atoi(argv[9]);
     }
     else
     {
-        printf("expected eleven arguments: data file, chosen column file, number of rows to read, number of attributes, beta, max iterations, iterations per test, stop error, trials, id, number of threads\n");
+        printf("expected nine arguments: data file, number of columns to read, number of rows to read, number of attributes, max iterations, iterations per test, trials, name for output, number of threads\n");
         return 1;
     }
 
@@ -685,13 +665,9 @@ int main(int argc, char *argv[])
     sprintf(weightfile, "%s.weights", id);
     fp = fopen(weightfile, "w");
     fclose(fp);
-    // file to store the binary codes of each solution we find (if any)
-    sprintf(codefile, "%s.codes", id);
-    fp = fopen(codefile, "w");
-    fclose(fp);
-    // file to store the predicted dataset of each solution we find (if any)
-    sprintf(completedatafile, "%s.pred", id);
-    fp = fopen(completedatafile, "w");
+    // file to store the binary bits of each solution we find (if any)
+    sprintf(bitfile, "%s.bits", id);
+    fp = fopen(bitfile, "w");
     fclose(fp);
 
     printf("begin algorithm\n");
@@ -719,11 +695,11 @@ int main(int argc, char *argv[])
             fprintf(fp, "%d,%d\n", e, iter);
             fclose(fp);
             for (da = 0; da < rows; ++da)
-                storeinnodes(da);
-            if (testpred(datafile, data, e) > restart_threshold)
+                storebits(da);
+            if (testpred(datafile, rows, e) > restart_threshold)
                 globalinit();
             for (da = 0; da < rows; ++da)
-                storeprevcodes(da);
+                storeprevbits(da);
             if (iter)
             {
                 trialiter += iter;
