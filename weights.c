@@ -5,11 +5,11 @@
 #include <math.h>
 #include <omp.h>
 
-int nt, data, innodes, outnodes;
-int **inputcode;
+int nt, rows, attributes, columns;
+int **inputbit;
 fpos_t *datapos;
 double *columnaverage, *rowaveragediff;
-char *outdata, testfile[100], wirefile[100], completedatafile[100];
+char *outdata, testfile[100], weightfile[100];
 
 static inline double sq(double diff)
 {
@@ -21,10 +21,10 @@ int swaprows(double **M, double *v, int i)
 {
     int j, k;
     double temp;
-    for (j = i + 1; j < innodes; j++)
+    for (j = i + 1; j < attributes; j++)
         if (fabs(M[j][i]) > .001)
         {
-            for (k = i; k < innodes; k++)
+            for (k = i; k < attributes; k++)
             {
                 temp = M[i][k];
                 M[i][k] = M[j][k];
@@ -42,24 +42,24 @@ int swaprows(double **M, double *v, int i)
 void solve(double **M, double *v)
 {
     int i, j, k;
-    for (i = 0; i < innodes; i++)
+    for (i = 0; i < attributes; i++)
     {
         if (fabs(M[i][i]) < .001 && swaprows(M, v, i) == -1)
             continue; // if we cannot swap rows to make M[i][i]!=0, ignore this column (redundant variable)
         // otherwise, normalize row i so that M[i][i]=1
         v[i] /= M[i][i];
-        for (k = i + 1; k < innodes; k++)
+        for (k = i + 1; k < attributes; k++)
             M[i][k] /= M[i][i];
         M[i][i] = 1.;
-        for (j = i + 1; j < innodes; j++)
+        for (j = i + 1; j < attributes; j++)
         { // use row i to eliminate M[j][i]
             v[j] -= v[i] * M[j][i];
-            for (k = i + 1; k < innodes; k++)
+            for (k = i + 1; k < attributes; k++)
                 M[j][k] -= M[i][k] * M[j][i];
             M[j][i] = 0.; // don't actually need this element, as long as we know it is 0
         }
     }
-    for (i = innodes - 1; i >= 0; i--)
+    for (i = attributes - 1; i >= 0; i--)
         if (M[i][i] == 1.)
             for (j = i - 1; j >= 0; j--)
             { // use row i to eliminate M[j][i]
@@ -82,7 +82,7 @@ int readdata(char *datafile)
     }
 
     char c = ' ';
-    for (i = 0; i < data; i++)
+    for (i = 0; i < rows; i++)
     {
         for (n = 0;; ++n)
         {
@@ -95,7 +95,7 @@ int readdata(char *datafile)
             }
             if (c == '\n')
             {
-                if (n < outnodes)
+                if (n < columns)
                 {
                     printf("not enough data columns\n");
                     fclose(fp);
@@ -107,10 +107,10 @@ int readdata(char *datafile)
     }
     fclose(fp);
 
-    datapos = malloc(data * sizeof(fpos_t));
+    datapos = malloc(rows * sizeof(fpos_t));
 
     fp = fopen(datafile, "r");
-    for (i = 0; i < data; i++)
+    for (i = 0; i < rows; i++)
     {
         fgetpos(fp, &datapos[i]);
         for (n = 0;; ++n)
@@ -138,9 +138,9 @@ void readcolumnaverages(char *colavgfile)
 {
     int o;
     FILE *fp;
-    columnaverage = malloc(outnodes * sizeof(double));
+    columnaverage = malloc(columns * sizeof(double));
     fp = fopen(colavgfile, "r");
-    for (o = 0; o < outnodes; ++o)
+    for (o = 0; o < columns; ++o)
     {
         fscanf(fp, "%lf", &columnaverage[o]);
     }
@@ -152,30 +152,30 @@ void readrowaveragediffs(char *rowavgfile)
 {
     int d;
     FILE *fp;
-    rowaveragediff = malloc(data * sizeof(double));
+    rowaveragediff = malloc(rows * sizeof(double));
     fp = fopen(rowavgfile, "r");
-    for (d = 0; d < data; ++d)
+    for (d = 0; d < rows; ++d)
     {
         fscanf(fp, "%lf", &rowaveragediff[d]);
     }
     fclose(fp);
 }
 
-// read the input codes for each row
-int readcodes(char *codefile, int plusminus)
+// read the input bits for each row
+int readbits(char *bitfile)
 {
     FILE *fp;
     int d, i;
     char c;
 
-    // first find out how many innodes there are
-    fp = fopen(codefile, "r");
+    // first find out how many attributes there are
+    fp = fopen(bitfile, "r");
     if (!fp)
     {
-        printf("codefile not found\n");
+        printf("bitfile not found\n");
         return 0;
     }
-    for (innodes = 0;; innodes++)
+    for (attributes = 0;; attributes++)
     {
         c = fgetc(fp);
         if (c == '\n')
@@ -183,14 +183,14 @@ int readcodes(char *codefile, int plusminus)
     }
     fclose(fp);
 
-    inputcode = malloc(data * sizeof(int *));
-    for (d = 0; d < data; d++)
-        inputcode[d] = malloc(innodes * sizeof(int));
+    inputbit = malloc(rows * sizeof(int *));
+    for (d = 0; d < rows; d++)
+        inputbit[d] = malloc(attributes * sizeof(int));
 
-    // now store the input codes for each row
-    fp = fopen(codefile, "r");
+    // now store the input bits for each row
+    fp = fopen(bitfile, "r");
     i = 0;
-    for (d = 0; d < data;)
+    for (d = 0; d < rows;)
     {
         c = fgetc(fp);
         if (c == '\n' || c == EOF)
@@ -200,9 +200,7 @@ int readcodes(char *codefile, int plusminus)
         }
         else
         {
-            inputcode[d][i] = c - '0';
-            if (plusminus)
-                inputcode[d][i] = 2 * inputcode[d][i] - 1;
+            inputbit[d][i] = c - '0';
             i++;
         }
     }
@@ -212,23 +210,22 @@ int readcodes(char *codefile, int plusminus)
 
 int main(int argc, char *argv[])
 {
-    int totobs = 0, plusminus;
+    int totobs = 0;
     double totprederr = 0., totbaselineprederr = 0.;
-    char *datafile, colfile[100], rowfile[100], *codefile, *id;
+    char *datafile, colfile[100], rowfile[100], *bitfile, *id;
     FILE *fp;
-    if (argc == 6)
+    if (argc == 5)
     {
         datafile = argv[1];
-        codefile = argv[2];
+        bitfile = argv[2];
         id = argv[3];
         nt = atoi(argv[4]);
-        outnodes = 17770;
-        data = 480189;
-        plusminus = atoi(argv[5]);
+        columns = 17770;
+        rows = 480189;
     }
     else
     {
-        printf("expected five arguments: data file, code file, id, number of threads, plusminus\n");
+        printf("expected four arguments: data file, bit file, name for results, number of threads\n");
         return 1;
     }
 
@@ -242,22 +239,18 @@ int main(int argc, char *argv[])
     printf("read avgs\n");
     readcolumnaverages(colfile);
     readrowaveragediffs(rowfile);
-    // read the code file
-    printf("read codes\n");
-    if (!readcodes(codefile, plusminus))
+    // read the bit file
+    printf("read bits\n");
+    if (!readbits(bitfile))
         return 1;
 
     // file to store the test performance after each batch
     sprintf(testfile, "%s.test", id);
     fp = fopen(testfile, "w");
     fclose(fp);
-    // file to store the wires of each solution we find (if any)
-    sprintf(wirefile, "%s.wires", id);
-    fp = fopen(wirefile, "w");
-    fclose(fp);
-    // file to store the predicted dataset of each solution we find (if any)
-    sprintf(completedatafile, "%s.pred", id);
-    fp = fopen(completedatafile, "w");
+    // file to store the weights of each solution we find (if any)
+    sprintf(weightfile, "%s.weights", id);
+    fp = fopen(weightfile, "w");
     fclose(fp);
 
     int o;
@@ -269,43 +262,43 @@ int main(int argc, char *argv[])
         FILE *fr;
         // printf("allocating memory for %d\n", tn);
         double *xo, **xx;
-        xo = malloc(innodes * sizeof(double));
-        xx = malloc(innodes * sizeof(double *));
-        for (i = 0; i < innodes; i++)
-            xx[i] = malloc(innodes * sizeof(double));
-        for (o = tn; o < outnodes; o += nt)
-        { // find the best wires for outnode o, based on the input codes and observations
+        xo = malloc(attributes * sizeof(double));
+        xx = malloc(attributes * sizeof(double *));
+        for (i = 0; i < attributes; i++)
+            xx[i] = malloc(attributes * sizeof(double));
+        for (o = tn; o < columns; o += nt)
+        { // find the best weights for outnode o, based on the input bits and observations
             printf("outnode %d\n", o);
             // initialize input-observation vector and input-input matrix
-            for (i = 0; i < innodes; i++)
+            for (i = 0; i < attributes; i++)
             {
                 xo[i] = 0.;
-                for (j = 0; j < innodes; j++)
+                for (j = 0; j < attributes; j++)
                     xx[i][j] = 0.;
             }
             fr = fopen(datafile, "r");
-            for (d = 0; d < data; d++)
+            for (d = 0; d < rows; d++)
             {
                 fsetpos(fr, &datapos[d]);
                 fseek(fr, o, SEEK_CUR);
                 observation = fgetc(fr) - '0';
                 if (observation) // only consider data with an obervation for this outnode
-                    for (i = 0; i < innodes; i++)
+                    for (i = 0; i < attributes; i++)
                     {
-                        xo[i] += inputcode[d][i] * (observation - columnaverage[o] - rowaveragediff[d]);
-                        for (j = i; j < innodes; j++)
-                            xx[i][j] += inputcode[d][i] * inputcode[d][j];
+                        xo[i] += inputbit[d][i] * (observation - columnaverage[o] - rowaveragediff[d]);
+                        for (j = i; j < attributes; j++)
+                            xx[i][j] += inputbit[d][i] * inputbit[d][j];
                     }
             }
-            for (i = 0; i < innodes; i++)
+            for (i = 0; i < attributes; i++)
                 for (j = 0; j < i; j++)
                     xx[i][j] = xx[j][i]; // the input-input matrix is symmetric
             // solve the system
-            solve(xx, xo); // this assigns the desired wire states to xo
+            solve(xx, xo); // this assigns the desired weight states to xo
             // find the rms error
             int obs = 0;
             double pred, prederr = 0., baselineprederr = 0.;
-            for (d = 0; d < data; d++)
+            for (d = 0; d < rows; d++)
             {
                 fsetpos(fr, &datapos[d]);
                 fseek(fr, o, SEEK_CUR);
@@ -314,8 +307,8 @@ int main(int argc, char *argv[])
                 {
                     obs++;
                     pred = columnaverage[o] + rowaveragediff[d];
-                    for (i = 0; i < innodes; ++i)
-                        pred += xo[i] * inputcode[d][i];
+                    for (i = 0; i < attributes; ++i)
+                        pred += xo[i] * inputbit[d][i];
                     prederr += sq(pred - observation);
                     baselineprederr += sq(columnaverage[o] + rowaveragediff[d] - observation);
                 }
@@ -330,10 +323,10 @@ int main(int argc, char *argv[])
                 fp = fopen(testfile, "a");
                 fprintf(fp, "%d,%d,%f,%f\n", o, obs, sqrt(baselineprederr / obs), sqrt(prederr / obs));
                 fclose(fp);
-                // print the wire values
-                fp = fopen(wirefile, "a");
+                // print the weight values
+                fp = fopen(weightfile, "a");
                 fprintf(fp, "%d:", o);
-                for (i = 0; i < innodes; ++i)
+                for (i = 0; i < attributes; ++i)
                     fprintf(fp, " %12.6f", xo[i]);
                 fprintf(fp, "\n");
                 fclose(fp);
