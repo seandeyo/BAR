@@ -474,21 +474,12 @@ int clipround(double x)
 // read average observation for each column
 void readcolumnaverages(char *colavgfile)
 {
-    int c = 0, o;
-    double dummy;
+    int o;
     FILE *fp;
     columnaverage = malloc(columns * sizeof(double));
     fp = fopen(colavgfile, "r");
     for (o = 0; o < columns; ++o)
-    {
-        while (c < columns)
-        {
-            fscanf(fp, "%lf", &dummy);
-            c++;
-        }
         fscanf(fp, "%lf", &columnaverage[o]);
-        c++;
-    }
     fclose(fp);
 }
 
