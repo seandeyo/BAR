@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
 	viewerIDs = malloc(V * sizeof(int));
 	for (v = 0; v < V; ++v)
 		viewerIDs[v] = 0;
-
+	printf("reading raw data\n");
 	fp = fopen(infile, "r");
 	while (fgets(line, L, fp))
 	{
@@ -64,17 +64,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	fclose(fp);
-
-	printf("\ncount\n");
-	for (r = 1; r <= 5; ++r)
-		c[r - 1] = 0;
-	for (v = 0; v < V; ++v)
-		for (m = 0; m < M; ++m)
-			if (ratings[v][m] > 0)
-				c[ratings[v][m] - 1]++;
-	for (r = 1; r <= 5; ++r)
-		printf("%d: %d\n", r, c[r - 1]);
-
+	printf("printing matrix file\n");
 	fp = fopen(outfile, "w");
 	for (v = 0; v < V; ++v)
 	{
