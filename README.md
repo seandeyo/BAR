@@ -8,9 +8,9 @@ This is the repository for "A transparent approach to data representation" (http
 - name of the data file
 - number of columns (movies) to use; a few hundred is enough
 - number of rows (viewers) to use; you can use all 480189, or fewer to get quicker diagnostic runs on a sample of the viewers
-- number of attributes to use; 8 or 16 can give decent results (more attribites will take longer)
+- number of attributes to use; 8 or 16 can give decent results (more attributes will take longer)
 - number of iterations; 1000 is usually enough
-- how often (measured in iterations) to compute RMSE; 10 is a good choice (more often makes the algorithm slower)
+- how often (measured in iterations) to compute RMSE; 10 is a good choice (computing RMSE more often makes the algorithm slower)
 - how many trials to run; just one is probably enough if training on all viewers
 - desired name for results files
 - number of threads to use
