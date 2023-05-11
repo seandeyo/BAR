@@ -133,20 +133,6 @@ int main(int argc, char *argv[])
     }
     fclose(fr);
 
-    char name[100];
-
-    qsort(*columnstats, columns, 3 * sizeof(double), compare_func);
-    strcpy(name, datafile);
-    fw = fopen(strcat(name, "_sorted_colnum"), "w");
-    for (j = 0; j < columns; ++j)
-        fprintf(fw, "%d,%.6f\n", (int)(columnstats[j][0] + .5), columnstats[j][2]);
-    fclose(fw);
-    strcpy(name, datafile);
-    fw = fopen(strcat(name, "_sorted_colavg"), "w");
-    for (j = 0; j < columns; ++j)
-        fprintf(fw, "%.6f\n", columnstats[j][1]);
-    fclose(fw);
-
     rowstats = malloc(rows * sizeof(double[2]));
     fr = fopen(datafile, "r");
     for (d = 0; d < rows; d++)
@@ -170,6 +156,20 @@ int main(int argc, char *argv[])
         printf("row %d avg %.6f\n", d, rowstats[d][1]);
     }
     fclose(fr);
+
+    char name[100];
+
+    qsort(*columnstats, columns, 3 * sizeof(double), compare_func);
+    strcpy(name, datafile);
+    fw = fopen(strcat(name, "_sorted_colnum"), "w");
+    for (j = 0; j < columns; ++j)
+        fprintf(fw, "%d,%.6f\n", (int)(columnstats[j][0] + .5), columnstats[j][2]);
+    fclose(fw);
+    strcpy(name, datafile);
+    fw = fopen(strcat(name, "_sorted_colavg"), "w");
+    for (j = 0; j < columns; ++j)
+        fprintf(fw, "%.6f\n", columnstats[j][1]);
+    fclose(fw);
 
     qsort(*rowstats, rows, 2 * sizeof(double), random_func);
     strcpy(name, datafile);
