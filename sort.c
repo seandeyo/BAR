@@ -82,7 +82,7 @@ int main(int argc, char *argv[])
 
     if (argc < 2)
     {
-        printf("expecting name of datafile");
+        printf("expecting name of datafile\n");
         return 1;
     }
     datafile = argv[1];
