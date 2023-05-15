@@ -406,13 +406,10 @@ void storeprevbits(int d0)
         oldbits[d0][i] = storedbits[d0][i];
 }
 
-// initialize metric parameters and global concur values (for weights)
+// initialize variables
 void globalinit()
 {
     int d, o, i;
-    for (o = 0; o < columns; ++o)
-        for (i = 0; i < attributes; ++i)
-            wB[o][i] = 2. * (urand() - .5) / attributes;
     for (d = 0; d < rows; ++d)
         for (i = 0; i < attributes; ++i)
         {
